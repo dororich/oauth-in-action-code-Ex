@@ -46,13 +46,35 @@ var getAccessToken = function(req, res, next) {
 	} else if (req.query && req.query.access_token) {
 		inToken = req.query.access_token
 	}
-	
+
 	console.log('Incoming token: %s', inToken);
 
 	/*
 	 * Send the incoming token to the introspection endpoint and parse the results
 	 */
 
+	var form_data = qs.stringify({
+		token: inToken
+	});
+	var headers = {
+		'Content-Type': 'application/x-www-form-urlencoded',
+		'Authorization': 'Basic ' +
+			encodeClientCredentials(protectedResource.resource_id,
+				protectedResource.resource_secret)
+	};
+	var tokRes = request('POST', authServer.introspectionEndpoint, {
+		body: form_data,
+		headers: headers
+	});
+
+	if (tokRes.statusCode >= 200 && tokRes.statusCode < 300) {
+		var body = JSON.parse(tokRes.getBody());
+		console.log('Got introspection response', body);
+		var active = body.active;
+		if (active) {
+			req.access_token = body;
+		}
+	}
 
 	next();
 	return;
@@ -76,7 +98,7 @@ app.post("/resource", cors(), getAccessToken, function(req, res){
 	} else {
 		res.status(401).end();
 	}
-	
+
 });
 
 var encodeClientCredentials = function(clientId, clientSecret) {
@@ -89,4 +111,3 @@ var server = app.listen(9002, 'localhost', function () {
 
   console.log('OAuth Resource Server is listening at http://%s:%s', host, port);
 });
- 

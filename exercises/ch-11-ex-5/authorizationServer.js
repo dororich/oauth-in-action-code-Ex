@@ -48,9 +48,9 @@ app.get('/', function(req, res) {
 });
 
 app.get("/authorize", function(req, res){
-	
+
 	var client = getClient(req.query.client_id);
-	
+
 	if (!client) {
 		console.log('Unknown client %s', req.query.client_id);
 		res.render('error', {error: 'Unknown client'});
@@ -60,7 +60,7 @@ app.get("/authorize", function(req, res){
 		res.render('error', {error: 'Invalid redirect URI'});
 		return;
 	} else {
-		
+
 		var rscope = req.query.scope ? req.query.scope.split(' ') : undefined;
 		var cscope = client.scope ? client.scope.split(' ') : undefined;
 		if (__.difference(rscope, cscope).length > 0) {
@@ -70,11 +70,11 @@ app.get("/authorize", function(req, res){
 			res.redirect(urlParsed);
 			return;
 		}
-		
+
 		var reqid = randomstring.generate(8);
-		
+
 		requests[reqid] = req.query;
-		
+
 		res.render('approve', {client: client, reqid: reqid, scope: rscope});
 		return;
 	}
@@ -92,7 +92,7 @@ app.post('/approve', function(req, res) {
 		res.render('error', {error: 'No matching authorization request'});
 		return;
 	}
-	
+
 	if (req.body.approve) {
 		if (query.response_type == 'code') {
 			// user approved access
@@ -109,11 +109,11 @@ app.post('/approve', function(req, res) {
 			}
 
 			var code = randomstring.generate(8);
-			
+
 			// save the code and request for later
-			
+
 			codes[code] = { request: query, scope: rscope };
-		
+
 			var urlParsed = buildUrl(query.redirect_uri, {
 				code: code,
 				state: query.state
@@ -136,11 +136,11 @@ app.post('/approve', function(req, res) {
 		res.redirect(urlParsed);
 		return;
 	}
-	
+
 });
 
 app.post("/token", function(req, res){
-	
+
 	var auth = req.headers['authorization'];
 	if (auth) {
 		// check the auth header
@@ -148,7 +148,7 @@ app.post("/token", function(req, res){
 		var clientId = clientCredentials.id;
 		var clientSecret = clientCredentials.secret;
 	}
-	
+
 	// otherwise, check the post body
 	if (req.body.client_id) {
 		if (clientId) {
@@ -157,28 +157,28 @@ app.post("/token", function(req, res){
 			res.status(401).json({error: 'invalid_client'});
 			return;
 		}
-		
+
 		var clientId = req.body.client_id;
 		var clientSecret = req.body.client_secret;
 	}
-	
+
 	var client = getClient(clientId);
 	if (!client) {
 		console.log('Unknown client %s', clientId);
 		res.status(401).json({error: 'invalid_client'});
 		return;
 	}
-	
+
 	if (client.client_secret != clientSecret) {
 		console.log('Mismatched client secret, expected %s got %s', client.client_secret, clientSecret);
 		res.status(401).json({error: 'invalid_client'});
 		return;
 	}
-	
+
 	if (req.body.grant_type == 'authorization_code') {
-		
+
 		var code = codes[req.body.code];
-		
+
 		if (code) {
 			delete codes[req.body.code]; // burn our code, it's been used
 			if (code.request.client_id == clientId) {
@@ -195,14 +195,14 @@ app.post("/token", function(req, res){
 
 				res.status(200).json(token_response);
 				console.log('Issued tokens for code %s', req.body.code);
-				
+
 				return;
 			} else {
 				console.log('Client mismatch, expected %s got %s', code.request.client_id, clientId);
 				res.status(400).json({error: 'invalid_grant'});
 				return;
 			}
-		
+
 
 		} else {
 			console.log('Unknown code, %s', req.body.code);
@@ -220,11 +220,11 @@ app.post("/token", function(req, res){
 					res.status(400).json({error: 'invalid_grant'});
 					return;
 				}
-				
+
 				/*
 				 * Bonus: handle scopes for a refresh token request appropriately
 				 */
-				
+
 				var access_token = randomstring.generate();
 				nosql.insert({ access_token: access_token, client_id: clientId });
 				var token_response = { access_token: access_token, token_type: 'Bearer',  refresh_token: token.refresh_token };
@@ -248,7 +248,42 @@ app.post('/revoke', function(req, res) {
 	/*
 	 * Implement the token revocation endpoint
 	 */
-	
+	var auth = req.headers['authorization'];
+	if (auth) {
+		var clientCredentials = decodeClientCredentials(auth);
+		var clientId = clientCredentials.id;
+		var clientSecret = clientCredentials.secret;
+	}
+
+	if (req.body.client_id) {
+		if (clientId) {
+			res.status(401).json({ error: 'invalid_client' });
+			return;
+		}
+		var clientId = req.body.client_id;
+		var clientSecret = req.body.client_secret;
+	}
+
+	var client = getClient(clientId);
+	if (!client) {
+		res.status(401).json({ error: 'invalid_client' });
+		return;
+	}
+
+	if (client.client_secret != clientSecret) {
+		res.status(401).json({ error: 'invalid_client' });
+		return;
+	}
+	var inToken = req.body.token;
+	nosql.remove(function (token) {
+		if (token.access_token == inToken &&
+			token.client_id == clientId) {
+			return true;
+		}
+	}, function (err, count) {
+		res.status(204).end();
+		return;
+	});
 });
 
 var buildUrl = function(base, options, hash) {
@@ -263,14 +298,14 @@ var buildUrl = function(base, options, hash) {
 	if (hash) {
 		newUrl.hash = hash;
 	}
-	
+
 	return url.format(newUrl);
 };
 
 var decodeClientCredentials = function(auth) {
 	var clientCredentials = Buffer.from(auth.slice('basic '.length), 'base64').toString().split(':');
 	var clientId = querystring.unescape(clientCredentials[0]);
-	var clientSecret = querystring.unescape(clientCredentials[1]);	
+	var clientSecret = querystring.unescape(clientCredentials[1]);
 	return { id: clientId, secret: clientSecret };
 };
 
@@ -290,4 +325,3 @@ var server = app.listen(9001, 'localhost', function () {
 
   console.log('OAuth Authorization Server is listening at http://%s:%s', host, port);
 });
- 

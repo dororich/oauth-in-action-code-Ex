@@ -47,9 +47,9 @@ var getAccessToken = function(req, res, next) {
 	} else if (req.query && req.query.access_token) {
 		inToken = req.query.access_token
 	}
-	
+
 	console.log('Incoming token: %s', inToken);
-	
+
 	var tokenParts = inToken.split('.');
 	var header = JSON.parse(base64url.decode(tokenParts[0]));
 	var payload = JSON.parse(base64url.decode(tokenParts[1]));
@@ -58,33 +58,38 @@ var getAccessToken = function(req, res, next) {
 	/*
 	 * Validate the signature of the JWT
 	 */
+	// 署名検証の部分を追加
+	if (jose.jws.JWS.verify(inToken,
+		Buffer.from(sharedTokenSecret).toString('hex'),
+		[header.alg])) {
 
-	if (payload.iss == 'http://localhost:9001/') {
-		console.log('issuer OK');
-		if ((Array.isArray(payload.aud) && __.contains(payload.aud, 'http://localhost:9002/')) || 
-			payload.aud == 'http://localhost:9002/') {
-			console.log('Audience OK');
-			
-			var now = Math.floor(Date.now() / 1000);
-			
-			if (payload.iat <= now) {
-				console.log('issued-at OK');
-				if (payload.exp >= now) {
-					console.log('expiration OK');
-					
-					console.log('Token valid!');
-	
-					req.access_token = payload;
-					
+		if (payload.iss == 'http://localhost:9001/') {
+			console.log('issuer OK');
+			if ((Array.isArray(payload.aud) && __.contains(payload.aud, 'http://localhost:9002/')) ||
+				payload.aud == 'http://localhost:9002/') {
+				console.log('Audience OK');
+
+				var now = Math.floor(Date.now() / 1000);
+
+				if (payload.iat <= now) {
+					console.log('issued-at OK');
+					if (payload.exp >= now) {
+						console.log('expiration OK');
+
+						console.log('Token valid!');
+
+						req.access_token = payload;
+
+					}
 				}
 			}
+
 		}
-		
 	}
-			
+
 	next();
 	return;
-	
+
 };
 
 var requireAccessToken = function(req, res, next) {
@@ -107,7 +112,7 @@ app.post("/resource", cors(), getAccessToken, function(req, res){
 	} else {
 		res.status(401).end();
 	}
-	
+
 });
 
 var server = app.listen(9002, 'localhost', function () {
@@ -116,4 +121,3 @@ var server = app.listen(9002, 'localhost', function () {
 
   console.log('OAuth Resource Server is listening at http://%s:%s', host, port);
 });
- 

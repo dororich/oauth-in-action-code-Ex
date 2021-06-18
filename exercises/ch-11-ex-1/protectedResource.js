@@ -61,16 +61,34 @@ var getAccessToken = function(req, res, next) {
 	} else if (req.query && req.query.access_token) {
 		inToken = req.query.access_token
 	}
-	
+
 	console.log('Incoming token: %s', inToken);
-	
+
 	/*
 	 * Parse and validate the JWT here
 	 */
-				
+	// ドット文字でトークンを分割して、分割した箇所からデコードして読み込み
+	var tokenParts = inToken.split('.');
+	var payload = JSON.parse(base64url.decode(tokenParts[1]));
+
+	// デコードした内容をcheck
+	if (payload.iss == 'http://localhost:9001/') {
+		if ((Array.isArray(payload.aud) &&
+			__.contains(payload.aud, 'http://localhost:9002/')) ||
+			payload.aud == 'http://localhost:9002/') {
+			var now = Math.floor(Date.now() / 1000);
+			if (payload.iat <= now) {
+				if (payload.exp >= now) {
+					req.access_token = payload;
+				}
+			}
+		}
+	}
+
+
 	next();
 	return;
-	
+
 };
 
 var requireAccessToken = function(req, res, next) {
@@ -93,7 +111,7 @@ app.post("/resource", cors(), getAccessToken, function(req, res){
 	} else {
 		res.status(401).end();
 	}
-	
+
 });
 
 var server = app.listen(9002, 'localhost', function () {
@@ -102,4 +120,3 @@ var server = app.listen(9002, 'localhost', function () {
 
   console.log('OAuth Resource Server is listening at http://%s:%s', host, port);
 });
- 
